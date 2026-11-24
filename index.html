@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>我們的共用記帳本</title>
+  <style>
+    :root { --ink:#172c39; --muted:#637587; --line:#e1e8ed; --blue:#1675de; --violet:#7056cb; --bg:#f4f7fb; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif; background:var(--bg); color:var(--ink); }
+    button, input, textarea { font:inherit; }
+    button { cursor:pointer; }
+    .page { max-width:840px; margin:0 auto; padding:28px 16px 60px; }
+    h1 { margin:0 0 6px; font-size:clamp(26px,5vw,34px); }
+    h2 { margin:0 0 18px; font-size:19px; }
+    .subtitle,.muted { color:var(--muted); }
+    .subtitle { margin:0 0 24px; }
+    .card { background:white; border:1px solid var(--line); border-radius:18px; padding:22px; box-shadow:0 7px 28px rgba(26,52,77,.045); margin-bottom:18px; }
+    .hidden { display:none !important; }
+    .row { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .field { display:grid; gap:7px; margin:14px 0; }
+    label { font-size:14px; font-weight:650; }
+    input, textarea { width:100%; padding:12px 13px; border:1px solid #cbd6e0; border-radius:11px; background:white; color:var(--ink); outline:none; }
+    input:focus, textarea:focus { border-color:var(--blue); box-shadow:0 0 0 3px #1675de1b; }
+    .two { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .switch { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .choice { border:2px solid var(--line); background:#fff; color:var(--ink); border-radius:12px; padding:14px 9px; font-weight:750; }
+    .choice.active[data-direction="A_TO_B"] { border-color:var(--blue); background:#eff6ff; color:#155cae; }
+    .choice.active[data-direction="B_TO_A"] { border-color:var(--violet); background:#f4f0ff; color:#5f47b1; }
+    .button { border:0; border-radius:11px; padding:12px 18px; background:var(--blue); color:white; font-weight:750; }
+    .button.secondary { background:#eaf0f6; color:#32485a; }
+    .button.danger { background:#fff0f0; color:#ac3535; }
+    .button.small { font-size:13px; padding:8px 12px; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .summary { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin:18px 0; }
+    .metric { border-radius:13px; background:#f5f8fc; padding:15px; }
+    .metric b { display:block; font-size:clamp(20px,4vw,27px); margin-top:4px; }
+    .balance { background:#eaf5ff; border-radius:13px; padding:17px; font-weight:750; font-size:19px; text-align:center; }
+    .records { display:grid; gap:11px; }
+    .record { border:1px solid var(--line); border-radius:13px; padding:15px; display:flex; align-items:center; justify-content:space-between; gap:13px; }
+    .record strong { display:block; margin-bottom:4px; }
+    .record p { margin:5px 0 0; color:var(--muted); font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .record .amount { font-weight:800; font-size:20px; white-space:nowrap; text-align:right; }
+    .record .actions { display:flex; justify-content:flex-end; gap:7px; margin-top:10px; }
+    .tag { display:inline-block; border-radius:8px; padding:4px 9px; font-size:12px; font-weight:700; background:#eaf3ff; color:#175ead; }
+    .tag.purple { background:#f1edff; color:#6047ac; }
+    .error { color:#b13131; }
+    .status { font-size:14px; margin:10px 0; min-height:20px; }
+    .empty { color:var(--muted); text-align:center; padding:25px 0; }
+    dialog { border:0; border-radius:17px; padding:24px; width:min(92vw,390px); box-shadow:0 18px 80px #14263840; }
+    dialog::backdrop { background:#1929388c; }
+    dialog h2 { margin:0 0 8px; }
+    @media(max-width:560px) { .card { padding:17px; } .two { grid-template-columns:1fr; gap:0; } .record { align-items:flex-start; } .record .amount { font-size:17px; } .record .actions { flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="row">
+      <div>
+        <h1>💸 我們的共用記帳本</h1>
+        <p class="subtitle">開啟連結就能看帳本；新增免密碼，修改與刪除才需要輸入密碼。</p>
+      </div>
+    </div>
+
+    <p class="muted" style="font-size:12px;margin-top:-12px;margin-bottom:18px">提醒：這是免登入測試版。修改／刪除密碼只保護畫面按鈕，無法阻止繞過網頁直接改動資料庫；請勿存放敏感資料或當作正式金流帳本。</p>
+    <div id="appPanel">
+      <section class="card">
+        <h2>目前結算</h2>
+        <div class="summary">
+          <div class="metric">Red 幫 Yellow 付款總額<b id="totalA">NT$0</b></div>
+          <div class="metric">Yellow 幫 Red 付款總額<b id="totalB">NT$0</b></div>
+        </div>
+        <div id="balanceText" class="balance">目前互不欠款 🎉</div>
+      </section>
+
+      <section class="card" id="editorCard">
+        <h2 id="editorTitle">新增一筆紀錄</h2>
+        <form id="recordForm">
+          <label>這筆是誰幫誰付？</label>
+          <div class="switch" style="margin-top:9px">
+            <button type="button" class="choice active" data-direction="A_TO_B" aria-pressed="true">Red 幫 Yellow 付</button>
+            <button type="button" class="choice" data-direction="B_TO_A" aria-pressed="false">Yellow 幫 Red 付</button>
+          </div>
+          <div class="two">
+            <div class="field">
+              <label for="amount">金額（新台幣）</label>
+              <input id="amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="例如 250" required />
+            </div>
+            <div class="field">
+              <label for="date">日期</label>
+              <input id="date" type="date" required />
+            </div>
+          </div>
+          <div class="field">
+            <label for="note">備註（選填）</label>
+            <textarea id="note" rows="2" maxlength="200" placeholder="例如 晚餐、飲料、車資"></textarea>
+          </div>
+          <div class="row" style="justify-content:flex-start">
+            <button id="saveBtn" type="submit" class="button">儲存紀錄</button>
+            <button id="cancelEditBtn" type="button" class="button secondary hidden">取消修改</button>
+          </div>
+          <p id="formStatus" class="status" role="status"></p>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="row"><h2 style="margin:0">所有紀錄</h2><span class="muted" id="countText">0 筆</span></div>
+        <p class="muted" style="font-size:13px">新增、修改或刪除後，朋友的畫面也會即時更新。</p>
+        <div id="recordList" class="records"><p class="empty">正在讀取資料…</p></div>
+        <p id="listStatus" class="status" role="status"></p>
+      </section>
+    </div>
+  </main>
+
+  <dialog id="passwordDialog">
+    <form id="passwordForm">
+      <h2>請輸入操作密碼</h2>
+      <p class="muted" id="passwordAction">修改或刪除前請輸入操作密碼</p>
+      <div class="field">
+        <label for="actionPassword">共用密碼</label>
+        <input id="actionPassword" type="password" autocomplete="current-password" required />
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        <button type="button" id="passwordCancel" class="button secondary">取消</button>
+        <button type="submit" class="button">確認</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js";
+    import {
+      getFirestore, collection, addDoc, updateDoc, deleteDoc, doc,
+      onSnapshot, query, orderBy, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js";
+
+    // ====== 請換成你在 Firebase 專案設定中取得的資料 ======
+    const firebaseConfig = {
+      apiKey: "AIzaSyDW8-kiYzcnwtvMUSi14gkhPliEhRtFzp4",
+      authDomain: "shared-ledger-cd54f.firebaseapp.com",
+      projectId: "shared-ledger-cd54f",
+      storageBucket: "shared-ledger-cd54f.firebasestorage.app",
+      messagingSenderId: "473699643021",
+      appId: "1:473699643021:web:0cf093c237ff3e284c7cc4"
+    };
+    // 注意：這只是網頁介面密碼，不具伺服器端防護效果。
+    // 若 Firestore 規則開放寫入，知道專案設定的人可繞過網頁操作。
+    const ACTION_PASSWORD = "20060721";
+    // ======================================================
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const entries = collection(db, "sharedLedgerEntries");
+    const $ = id => document.getElementById(id);
+    const formatMoney = n => "NT$" + Number(n).toLocaleString("zh-TW", {
+      minimumFractionDigits: 0, maximumFractionDigits: 2
+    });
+    const today = () => {
+      const d = new Date();
+      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+      return d.toISOString().slice(0, 10);
+    };
+
+    let direction = "A_TO_B";
+    let editingId = null;
+    let records = [];
+    let busy = false;
+    $("date").value = today();
+
+    function setStatus(target, message = "", error = false) {
+      $(target).textContent = message;
+      $(target).classList.toggle("error", error);
+    }
+    function errorMessage(err) {
+      const code = err?.code || "";
+      if (code === "permission-denied") return "Firebase 權限不足，請檢查 Firestore Rules 是否允許存取 sharedLedgerEntries。";
+      return "操作失敗：" + (err?.message || "未知錯誤");
+    }
+    function setDirection(value) {
+      direction = value;
+      document.querySelectorAll(".choice").forEach(button => {
+        const active = button.dataset.direction === value;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+    }
+    document.querySelectorAll(".choice").forEach(button => {
+      button.addEventListener("click", () => setDirection(button.dataset.direction));
+    });
+
+    // 密碼輸入框使用 type="password"，避免 browser prompt 明碼顯示。
+    function askPassword(action) {
+      return new Promise(resolve => {
+        const dialog = $("passwordDialog");
+        const password = $("actionPassword");
+        $("passwordAction").textContent = action + "前，請輸入共用密碼。";
+        password.value = "";
+        const finish = () => {
+          dialog.removeEventListener("close", finish);
+          $("passwordForm").removeEventListener("submit", submit);
+          $("passwordCancel").removeEventListener("click", cancel);
+          const result = dialog.returnValue === "ok" ? password.value : null;
+          password.value = "";
+          resolve(result);
+        };
+        const submit = e => { e.preventDefault(); dialog.close("ok"); };
+        const cancel = () => dialog.close("cancel");
+        dialog.addEventListener("close", finish);
+        $("passwordForm").addEventListener("submit", submit);
+        $("passwordCancel").addEventListener("click", cancel);
+        dialog.showModal();
+        password.focus();
+      });
+    }
+    async function requirePassword(action) {
+      const password = await askPassword(action);
+      if (password === null) return false;
+      if (password !== ACTION_PASSWORD) {
+        throw new Error("密碼錯誤，請重新輸入。");
+      }
+      return true;
+    }
+
+    // 不必登入即可即時查看帳本。
+    // 注意：若 Firestore 直接允許 update/delete，前端密碼無法提供真正的資料庫權限保護。
+    const q = query(entries, orderBy("createdAt", "desc"));
+    onSnapshot(q, snapshot => {
+      records = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+      render();
+      setStatus("listStatus");
+    }, err => setStatus("listStatus", errorMessage(err), true));
+
+    function render() {
+      const aPaid = records.filter(r => r.direction === "A_TO_B").reduce((s, r) => s + Number(r.amount || 0), 0);
+      const bPaid = records.filter(r => r.direction === "B_TO_A").reduce((s, r) => s + Number(r.amount || 0), 0);
+      const net = Math.round((aPaid - bPaid) * 100) / 100;
+      $("totalA").textContent = formatMoney(aPaid);
+      $("totalB").textContent = formatMoney(bPaid);
+      $("balanceText").textContent = net > 0 ? `Yellow 還欠 Red ${formatMoney(net)}` : net < 0 ? `Red 還欠 Yellow ${formatMoney(-net)}` : "目前互不欠款 🎉";
+      $("countText").textContent = records.length + " 筆";
+      const list = $("recordList");
+      list.replaceChildren();
+      if (records.length === 0) {
+        const p = document.createElement("p"); p.className = "empty"; p.textContent = "還沒有紀錄，新增第一筆吧！"; list.append(p); return;
+      }
+      for (const record of records) {
+        const item = document.createElement("article"); item.className = "record";
+        const left = document.createElement("div");
+        const tag = document.createElement("span");
+        const aToB = record.direction === "A_TO_B";
+        tag.className = "tag" + (aToB ? "" : " purple");
+        tag.textContent = aToB ? "Red 幫 Yellow 付" : "Yellow 幫 Red 付";
+        const note = document.createElement("p");
+        note.textContent = (record.date || "未填日期") + (record.note ? " · " + record.note : "");
+        left.append(tag, note);
+        const right = document.createElement("div");
+        const amount = document.createElement("div"); amount.className = "amount"; amount.textContent = formatMoney(record.amount || 0);
+        const actions = document.createElement("div"); actions.className = "actions";
+        const editBtn = document.createElement("button"); editBtn.type = "button"; editBtn.className = "button secondary small"; editBtn.textContent = "修改";
+        editBtn.addEventListener("click", () => startEdit(record.id));
+        const deleteBtn = document.createElement("button"); deleteBtn.type = "button"; deleteBtn.className = "button danger small"; deleteBtn.textContent = "刪除";
+        deleteBtn.addEventListener("click", () => removeRecord(record.id));
+        actions.append(editBtn, deleteBtn); right.append(amount, actions); item.append(left, right); list.append(item);
+      }
+    }
+
+    function startEdit(id) {
+      const record = records.find(r => r.id === id);
+      if (!record) return;
+      editingId = id;
+      setDirection(record.direction === "B_TO_A" ? "B_TO_A" : "A_TO_B");
+      $("amount").value = record.amount;
+      $("date").value = record.date || today();
+      $("note").value = record.note || "";
+      $("editorTitle").textContent = "修改紀錄";
+      $("saveBtn").textContent = "儲存修改";
+      $("cancelEditBtn").classList.remove("hidden");
+      setStatus("formStatus", "修改內容後，按「儲存修改」會要求輸入密碼。");
+      $("editorCard").scrollIntoView({ behavior:"smooth", block:"start" });
+    }
+    function resetEditor() {
+      editingId = null;
+      $("recordForm").reset();
+      $("date").value = today();
+      setDirection("A_TO_B");
+      $("editorTitle").textContent = "新增一筆紀錄";
+      $("saveBtn").textContent = "儲存紀錄";
+      $("cancelEditBtn").classList.add("hidden");
+      setStatus("formStatus");
+    }
+    $("cancelEditBtn").addEventListener("click", resetEditor);
+
+    $("recordForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      if (busy) return;
+      const amount = Math.round(Number($("amount").value) * 100) / 100;
+      if (!Number.isFinite(amount) || amount <= 0) return setStatus("formStatus", "請輸入大於 0 的正確金額。", true);
+      if (!$("date").value) return setStatus("formStatus", "請選擇日期。", true);
+      busy = true; $("saveBtn").disabled = true;
+      try {
+        // 新增直接存；只有儲存既有紀錄的修改才要求密碼。
+        if (editingId && !(await requirePassword("儲存修改"))) return;
+        const data = { direction, amount, date: $("date").value, note: $("note").value.trim(), updatedAt: serverTimestamp() };
+        if (editingId) await updateDoc(doc(db, "sharedLedgerEntries", editingId), data);
+        else await addDoc(entries, { ...data, createdAt: serverTimestamp() });
+        resetEditor();
+        setStatus("formStatus", "已成功儲存 ✅");
+      } catch (err) { setStatus("formStatus", errorMessage(err), true); }
+      finally {
+        busy = false; $("saveBtn").disabled = false;
+      }
+    });
+
+    async function removeRecord(id) {
+      if (busy) return;
+      if (!confirm("確定要刪除這筆紀錄嗎？刪除後無法復原。")) return;
+      busy = true;
+      try {
+        if (!(await requirePassword("刪除紀錄"))) return;
+        await deleteDoc(doc(db, "sharedLedgerEntries", id));
+        if (editingId === id) resetEditor();
+        setStatus("listStatus", "已刪除紀錄 ✅");
+      } catch (err) { setStatus("listStatus", errorMessage(err), true); }
+      finally {
+        busy = false;
+      }
+    }
+  </script>
+</body>
+</html>
